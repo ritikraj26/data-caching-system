@@ -21,11 +21,32 @@ async Task HandleClient(Socket clientSocket){
     while(clientSocket.Connected){
         // for request
         var buffer = new byte[1024];
-        await clientSocket.ReceiveAsync(buffer);
+        int bytesRead = await clientSocket.ReceiveAsync(buffer, SocketFlags.None);
+        var requestString = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+        Console.WriteLine(requestString);
 
         // for response
-        var response = Encoding.UTF8.GetBytes(responseString);
-        clientSocket.Send(response);
+        var lines = requestString.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        if(lines.Length <= 2){
+            var message = "ERR invalid command\r\n";
+            var response = Encoding.UTF8.GetBytes(message);
+            clientSocket.Send(response);
+        } else {
+            if(lines[2].ToUpper() == "ECHO"){
+                var message = lines[4];
+                var response = Encoding.UTF8.GetBytes($"+{message}\r\n");
+                clientSocket.Send(response);
+            } else if(lines[2].ToUpper() == "PING"){
+                if(lines.Length == 5){
+                    var message = lines[4];
+                    var response = Encoding.UTF8.GetBytes($"+{message}\r\n");
+                    clientSocket.Send(response);
+                } else if(lines.Length == 3){
+                    var response = Encoding.UTF8.GetBytes(responseString);
+                    clientSocket.Send(response);
+                }
+            }
+        }
     }
 
     clientSocket.Close();

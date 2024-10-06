@@ -13,6 +13,20 @@ TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start();
 Dictionary<string, (string value, DateTime? expiry)> data = new Dictionary<string, (string, DateTime?)>();
 
+// storing dir and dbfilename
+string dir = "/tmp";
+string dbfilename = "dump.rdb";
+
+// fetch command line arguments
+string[] receivedArgs = Environment.GetCommandLineArgs();
+for (int i = 0; i < receivedArgs.Length; i++) {
+    if (receivedArgs[i] == "--dir" && i + 1 < receivedArgs.Length) {
+        dir = receivedArgs[i + 1];
+    } else if (receivedArgs[i] == "--dbfilename" && i + 1 < receivedArgs.Length) {
+        dbfilename = receivedArgs[i + 1];
+    }
+}
+
 // creating a new web socket connection
 while(true){
     var clientSocket = server.AcceptSocket(); // wait for client
@@ -73,6 +87,23 @@ async Task HandleClient(Socket clientSocket){
                         var response = Encoding.UTF8.GetBytes("$-1\r\n");
                         clientSocket.Send(response);
                     }
+                } else {
+                    var response = Encoding.UTF8.GetBytes("$-1\r\n");
+                    clientSocket.Send(response);
+                }
+            } else if(lines[2].ToUpper() == "CONFIG" && lines[4].ToUpper() == "GET"){
+                var configKey = lines[6].ToLower();
+                string configValue = null;
+
+                if(configKey == "dir"){
+                    configValue = dir;
+                } else if(configKey == "dbfilename"){
+                    configValue = dbfilename;
+                }
+
+                if(configValue != null){
+                    var response = Encoding.UTF8.GetBytes($"*2\r\n${configKey.Length}\r\n{configKey}\r\n${configValue.Length}\r\n{configValue}\r\n");
+                    clientSocket.Send(response);
                 } else {
                     var response = Encoding.UTF8.GetBytes("$-1\r\n");
                     clientSocket.Send(response);

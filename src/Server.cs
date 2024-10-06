@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
-using System.Collections.Generic;  
-
+using System.Collections.Generic;
+using System;
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 // Console.WriteLine("Logs from your program will appear here!");
@@ -11,7 +11,7 @@ using System.Collections.Generic;
 // Uncomment this block to pass the first stage
 TcpListener server = new TcpListener(IPAddress.Any, 6379);
 server.Start();
-Dictionary<string, string> data = new Dictionary<string, string>();
+Dictionary<string, (string value, DateTime? expiry)> data = new Dictionary<string, (string, DateTime?)>();
 
 // creating a new web socket connection
 while(true){
@@ -51,15 +51,28 @@ async Task HandleClient(Socket clientSocket){
             } else if(lines[2].ToUpper() == "SET"){
                 var key = lines[4];
                 var value = lines[6];
-                data[key] = value;
+                DateTime? expiry = null;
+                if(lines.Length >= 10 && lines[8].ToUpper() == "PX"){
+                    if(int.TryParse(lines[10], out int expiryMs)){
+                        expiry = DateTime.UtcNow.AddMilliseconds(expiryMs);
+                    }
+                }
+                
+                data[key] = (value, expiry);
                 var response = Encoding.UTF8.GetBytes("+OK\r\n");
                 clientSocket.Send(response);
             } else if(lines[2].ToUpper() == "GET"){
                 var key = lines[4];
                 if(data.ContainsKey(key)){
-                    var value = data[key];
-                    var response = Encoding.UTF8.GetBytes($"+{value}\r\n");
-                    clientSocket.Send(response);
+                    var (value, expiry) = data[key];
+                    if(expiry == null || expiry > DateTime.UtcNow){
+                        var response = Encoding.UTF8.GetBytes($"+{value}\r\n");
+                        clientSocket.Send(response);
+                    } else {
+                        data.Remove(key);
+                        var response = Encoding.UTF8.GetBytes("$-1\r\n");
+                        clientSocket.Send(response);
+                    }
                 } else {
                     var response = Encoding.UTF8.GetBytes("$-1\r\n");
                     clientSocket.Send(response);

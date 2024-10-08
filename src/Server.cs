@@ -10,125 +10,170 @@ public class RdbReader
 {
     private const string RDB_VERSION_INDICATOR = "REDIS";
 
+    private static void SeekToByte(BinaryReader br, byte b)
+    {
+        byte currentByte;
+        do{
+            currentByte = br.ReadByte();
+        } while (currentByte != b);
+    }
+
+    private static object ReadSizeEncodedValue(BinaryReader br) {
+        byte first = br.ReadByte();
+        if ((first & 0b11000000) == 0) {
+            // 6 bit integer
+            return first;
+        } else if ((first & 0b11000000) == 0b01000000) {
+            byte second = br.ReadByte();
+            byte firstPart = (byte)(first & 0b00111111);
+            byte[] bytes = [firstPart, second];
+            Array.Reverse(bytes);
+            return BitConverter.ToInt16(bytes);
+        } else if ((first & 0b11000000) == 0b10000000) {
+            // 32-bit integer
+            byte[] bytes = br.ReadBytes(4);
+            Array.Reverse(bytes);
+            return BitConverter.ToInt32(bytes);
+        } else {
+            first &= 0b00111111;
+            return ReadStringEncodedValue(first, br);
+        }
+    }
+
+    private static object ReadStringEncodedValue(byte first, BinaryReader br) {
+        if (first == 0xC0) {
+            // 8-bit integer
+            return (int)br.ReadByte();
+        } else if (first == 0xC1) {
+            // 16-bit integer
+            byte[] bytes = br.ReadBytes(2);
+            return BitConverter.ToInt16(bytes);
+        } else if (first == 0xC2) {
+            // 32-bit integer
+            byte[] bytes = br.ReadBytes(4);
+            return BitConverter.ToInt32(bytes);
+        } else if (first == 0xC3) {
+            // compressed string
+            return "";
+        } else {
+            byte[] bytes = br.ReadBytes(first);
+            return Encoding.UTF8.GetString(bytes);
+        }
+    }
+
+    private static object ReadStringEncodedValue(BinaryReader br) {
+        byte first = br.ReadByte();
+        return ReadStringEncodedValue(first, br);
+    }
+
     public static Dictionary<string, (string value, DateTime? expiry)> ReadKeysFromRdbFile(string filePath)
     {
         Dictionary<string, (string value, DateTime? expiry)> keys = new Dictionary<string, (string value, DateTime? expiry)>();
-
-        using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-        using (BinaryReader reader = new BinaryReader(fs))
-        {
-            Console.WriteLine("Reading RDB file...");
-            // 1. Read and verify the header
-            string headerName = new string(reader.ReadChars(5));
-            Console.WriteLine($"Header: {headerName}");
-            if (headerName != RDB_VERSION_INDICATOR)
-            {
-                throw new Exception("Invalid RDB file format");
-            }
-
-            // Read the version (unused)
-            string versionNo = new string(reader.ReadChars(4));
-            Console.WriteLine($"Version: {versionNo}");
-
-            // 2. Skip metadata section (simplified)
-            // In a full implementation, you'd parse auxiliary fields here
-
-            // 3. Read the database section
-            while (true)
-            {
-                byte opcode = reader.ReadByte();
-
-                if (opcode == 0xFF) // EOF marker
-                {
-                    // yet to implement the checksum at the end of the file
-                    // read 8byte CRC64 checksum for the entire file
-                    long checksum = reader.ReadInt64();
-                    Console.WriteLine($"Checksum: {checksum}");
-                    break;
-                }
-
-                // reading the header section
-                if (opcode == 0xFA) {
-                    Console.WriteLine("Reading header section...");
-                    int headerLen = reader.ReadByte();
-                    Console.WriteLine($"Header length: {headerLen}");
-                    string header = new string(reader.ReadChars(headerLen));
-                    Console.WriteLine($"Header: {header}");
-                    int metadataLen = reader.ReadByte();
-                    Console.WriteLine($"Metadata length: {metadataLen}");
-                    string metadata = new string(reader.ReadChars(metadataLen));
-                    Console.WriteLine($"Metadata: {metadata}");
-                    // advance the opcode
-                    opcode = reader.ReadByte();
-                    continue;
-                }
-
-
-                if (opcode == 0xFE) // Select DB opcode
-                {
-                    // Read database number (we're not using it in this simple implementation)
-                    Console.WriteLine("Reading database section...");
-                    ReadDatabaseSection(reader, keys);
-                }
-            }
-
-            // 4. End of file section (already handled by breaking the loop)
+        BinaryReader br = null;
+        try {
+            FileInfo file = new FileInfo(filePath);
+            FileStream fs = file.OpenRead();
+            // skip the header
+            fs.Seek(9, SeekOrigin.Begin);
+            br = new BinaryReader(fs);
+        } catch (Exception ex) {
+            Console.WriteLine("RDB file is empty or not found");
+            return keys;
         }
-        Console.WriteLine("Keys Length: " + keys.Count);
+
+        Console.WriteLine("Reading RDB file...");
+        
+        Console.WriteLine("1");
+        SeekToByte(br, 0xFE);
+
+        Console.WriteLine("2");
+        SeekToByte(br, 0xFB);
+
+        Console.WriteLine("3");
+        int keyValueSize = Convert.ToInt32(ReadSizeEncodedValue(br));
+
+        Console.WriteLine("4");
+        int expirySize = Convert.ToInt32(ReadSizeEncodedValue(br));
+
+        for (int i = 0; i < keyValueSize; i++) {
+            Console.WriteLine($"Reading key-value pair {i + 1}");
+
+            byte type = br.ReadByte();
+            DateTime? expiry = null;
+            if (type == 0xFC) {
+                expiry = DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToUInt32(br.ReadBytes(4))).DateTime;
+                type = br.ReadByte(); 
+            }
+
+            string key = Convert.ToString(ReadStringEncodedValue(br));
+            string value = type switch {
+                0x00 => Convert.ToString(ReadStringEncodedValue(br)),
+                _ => throw new NotImplementedException()
+            };
+
+            keys.Add(key, (value, expiry));
+        }
+
         return keys;
     }
 
-    private static void ReadDatabaseSection(BinaryReader reader, Dictionary<string, (string value, DateTime? expiry)> keys)
-    {
-        uint index = reader.ReadByte();
-        Console.WriteLine($"Database index: {index}");
+    // Adjusting the RDB parsing logic for key-value pairs
+    // private static void ReadDatabaseSection(BinaryReader reader, Dictionary<string, (string value, DateTime? expiry)> keys)
+    // {
+    //     int index = reader.ReadByte();
+    //     Console.WriteLine($"Database index: {index}");
 
-        byte opcode = reader.ReadByte();
-        if (opcode == 0xFB) {
-            // reading the hash table size information
-            int hashTableSize = reader.ReadByte();
-            Console.WriteLine($"Hash table size: {hashTableSize}");
-            int keysWithExpiry = reader.ReadByte();
-            Console.WriteLine($"Keys with expiry: {keysWithExpiry}");
+    //     byte opcode = reader.ReadByte();
+    //     if (opcode == 0xFB) {
+    //         // reading the hash table size information
+    //         int hashTableSize = reader.ReadByte();
+    //         Console.WriteLine($"Hash table size: {hashTableSize}");
+    //         int keysWithExpiry = reader.ReadByte();
+    //         Console.WriteLine($"Keys with expiry: {keysWithExpiry}");
             
-            while(hashTableSize > 0) {
-                hashTableSize--;
-                int valueType = reader.ReadByte();
-                // valueType 0 means its string
-                if (valueType == 0) {
-                    int keyLen = reader.ReadByte();
-                    string key = new string(reader.ReadChars(keyLen));
-                    int valueLen = reader.ReadByte();
-                    string value = new string(reader.ReadChars(valueLen));
-                    Console.WriteLine($"Key: {key}, Value: {value}");
+    //         while(hashTableSize > 0) {
+    //             hashTableSize--;
+    //             int valueType = reader.ReadByte();
+    //             if (valueType == 0) {
+    //                 int keyLen = reader.ReadByte();
+    //                 string key = new string(reader.ReadChars(keyLen)); // Read the key
+    //                 int valueLen = reader.ReadByte();
+    //                 string value = null;
 
-                    if (keysWithExpiry > 0) {
-                        byte expirycode = reader.ReadByte();
-                        if (expirycode == 0xFC || expirycode == 0xFD) {
-                            int expiryLen = reader.ReadByte();
-                            string expiry = new string(reader.ReadChars(expiryLen));
-                            Console.WriteLine($"Expiry: {expiry}");
-                            keys[key] = (value, DateTime.Parse(expiry));
-                            keysWithExpiry--;
-                        } else {
-                            keys[key] = (value, null);
-                            // go back one byte
-                            reader.BaseStream.Position -= 1;
-                        }
-                        // adding key,value and expiry to the dictionary
+    //                 if (valueLen > 0) {
+    //                     value = new string(reader.ReadChars(valueLen));  // Read the value
+    //                 } else {
+    //                     reader.BaseStream.Position -= 1;  // Ensure no overshoot of the stream
+    //                 }
 
-                    } else {
-                        // adding key and value to the dictionary
-                        keys[key] = (value, null);
-                    }
-                } else {
-                    throw new Exception("Invalid value type");
-                }
-            }
-        } else {
-            throw new Exception("Invalid database section");
-        }
-    }
+    //                 Console.WriteLine($"Key: {key}, Value: {value}");
+
+    //                 // Handle expiry if available
+    //                 if (keysWithExpiry > 0) {
+    //                     byte expirycode = reader.ReadByte();
+    //                     if (expirycode == 0xFC || expirycode == 0xFD) {
+    //                         int expiryLen = reader.ReadByte();
+    //                         string expiry = new string(reader.ReadChars(expiryLen));  // Read expiry
+    //                         Console.WriteLine($"Expiry: {expiry}");
+    //                         keys[key] = (value, DateTime.Parse(expiry));
+    //                         keysWithExpiry--;
+    //                     } else {
+    //                         keys[key] = (value, null);
+    //                         reader.BaseStream.Position -= 1;  // Ensure expiry not incorrectly processed
+    //                     }
+    //                 } else {
+    //                     // No expiry
+    //                     keys[key] = (value, null);
+    //                 }
+    //             } else {
+    //                 throw new Exception("Invalid value type");
+    //             }
+    //         }
+    //     } else {
+    //         throw new Exception("Invalid database section");
+    //     }
+    // }
+
 }
 
 public class Program

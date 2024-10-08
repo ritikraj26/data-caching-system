@@ -101,8 +101,11 @@ public class RdbReader
             byte type = br.ReadByte();
             DateTime? expiry = null;
             if (type == 0xFC) {
-                expiry = DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToUInt32(br.ReadBytes(4))).DateTime;
+                expiry = DateTimeOffset.FromUnixTimeMilliseconds((long)BitConverter.ToUInt64(br.ReadBytes(8))).DateTime;
                 type = br.ReadByte(); 
+            } else if (type == 0xFD) {
+                expiry = DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToUInt32(br.ReadBytes(4))).DateTime;
+                type = br.ReadByte();
             }
 
             string key = Convert.ToString(ReadStringEncodedValue(br));

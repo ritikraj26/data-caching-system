@@ -119,64 +119,6 @@ public class RdbReader
 
         return keys;
     }
-
-    // Adjusting the RDB parsing logic for key-value pairs
-    // private static void ReadDatabaseSection(BinaryReader reader, Dictionary<string, (string value, DateTime? expiry)> keys)
-    // {
-    //     int index = reader.ReadByte();
-    //     Console.WriteLine($"Database index: {index}");
-
-    //     byte opcode = reader.ReadByte();
-    //     if (opcode == 0xFB) {
-    //         // reading the hash table size information
-    //         int hashTableSize = reader.ReadByte();
-    //         Console.WriteLine($"Hash table size: {hashTableSize}");
-    //         int keysWithExpiry = reader.ReadByte();
-    //         Console.WriteLine($"Keys with expiry: {keysWithExpiry}");
-            
-    //         while(hashTableSize > 0) {
-    //             hashTableSize--;
-    //             int valueType = reader.ReadByte();
-    //             if (valueType == 0) {
-    //                 int keyLen = reader.ReadByte();
-    //                 string key = new string(reader.ReadChars(keyLen)); // Read the key
-    //                 int valueLen = reader.ReadByte();
-    //                 string value = null;
-
-    //                 if (valueLen > 0) {
-    //                     value = new string(reader.ReadChars(valueLen));  // Read the value
-    //                 } else {
-    //                     reader.BaseStream.Position -= 1;  // Ensure no overshoot of the stream
-    //                 }
-
-    //                 Console.WriteLine($"Key: {key}, Value: {value}");
-
-    //                 // Handle expiry if available
-    //                 if (keysWithExpiry > 0) {
-    //                     byte expirycode = reader.ReadByte();
-    //                     if (expirycode == 0xFC || expirycode == 0xFD) {
-    //                         int expiryLen = reader.ReadByte();
-    //                         string expiry = new string(reader.ReadChars(expiryLen));  // Read expiry
-    //                         Console.WriteLine($"Expiry: {expiry}");
-    //                         keys[key] = (value, DateTime.Parse(expiry));
-    //                         keysWithExpiry--;
-    //                     } else {
-    //                         keys[key] = (value, null);
-    //                         reader.BaseStream.Position -= 1;  // Ensure expiry not incorrectly processed
-    //                     }
-    //                 } else {
-    //                     // No expiry
-    //                     keys[key] = (value, null);
-    //                 }
-    //             } else {
-    //                 throw new Exception("Invalid value type");
-    //             }
-    //         }
-    //     } else {
-    //         throw new Exception("Invalid database section");
-    //     }
-    // }
-
 }
 
 public class Program
@@ -184,6 +126,9 @@ public class Program
     static Dictionary<string, (string value, DateTime? expiry)> data = new Dictionary<string, (string, DateTime?)>();
     static string dir = "/tmp";
     static string dbfilename = "dump.rdb";
+
+    // geting the port number from the environment variable
+    static int port = 6379;
 
     public static void Main(string[] args)
     {
@@ -199,13 +144,15 @@ public class Program
             else if (args[i] == "--dbfilename" && i + 1 < args.Length)
             {
                 dbfilename = args[i + 1];
+            } else if(args[i] == "--port" && i + 1 < args.Length) {
+                port = int.Parse(args[i + 1]);
             }
         }
 
         // Load keys from RDB file
         LoadKeysFromRdbFile();
 
-        TcpListener server = new TcpListener(IPAddress.Any, 6379);
+        TcpListener server = new TcpListener(IPAddress.Any, port);
         server.Start();
 
         while (true)

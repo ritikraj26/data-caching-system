@@ -162,13 +162,9 @@ public static class RedisCommandHandler
     private static void HandleInfo (string []lines, Socket clientSocket) {
         var infoCommand = lines[4];
         if (infoCommand == "replication") {
-            string message = "role:";
-            Console.WriteLine(ReadArgs.IsReplica);
-            if (ReadArgs.IsReplica) {
-                message += "slave";
-            } else {
-                message += "master";
-            }
+            string message = "role:" + ((ReadArgs.IsReplica == true) ? "slave" : "master");
+            message += "\nmaster_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+            message += "\nmaster_repl_offset:0";
             SendResponse(clientSocket, message);
         }
     }

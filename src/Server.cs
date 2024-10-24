@@ -21,6 +21,8 @@ public class Server
 
         // sending PING to Master
         if (ReadArgs.IsReplica) {
+
+            // handshake 1/3
             var pingMessage = "*1\r\n$4\r\nPING\r\n";
             var pingMessageBytes = Encoding.UTF8.GetBytes(pingMessage);
 
@@ -30,12 +32,18 @@ public class Server
 
             Console.WriteLine("Sent PING to Master");
 
-            // var buffer = new byte[1024];
-            // int bytesRead = await masterSocket.ReceiveAsync(buffer, SocketFlags.None);
-            // var response = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-            // Console.WriteLine(response);
+            // handshake 2/3
+            pingMessage=$"*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{ReadArgs.Port}\r\n";
+            pingMessageBytes = Encoding.UTF8.GetBytes(pingMessage);
+            masterSocket.Send(pingMessageBytes);
 
-            masterSocket.Close();
+            pingMessage="*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+            pingMessageBytes = Encoding.UTF8.GetBytes(pingMessage);
+            masterSocket.Send(pingMessageBytes);
+
+            // Console.WriteLine("Sent REPLCONF to Master");
+
+            // masterSocket.Close();
         }
 
         TcpListener server = new TcpListener(IPAddress.Any, ReadArgs.Port);

@@ -19,12 +19,32 @@ public class Server
 
         RedisCommandHandler.data = RdbReader.LoadKeysFromRdbFile(ReadArgs.Dir, ReadArgs.DbFilename);
 
+        // sending PING to Master
+        if (ReadArgs.IsReplica) {
+            var pingMessage = "*1\r\n$4\r\nPING\r\n";
+            var pingMessageBytes = Encoding.UTF8.GetBytes(pingMessage);
+
+            var masterSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            masterSocket.Connect(ReadArgs.MasterHost, ReadArgs.MasterPort);
+            masterSocket.Send(pingMessageBytes);
+
+            Console.WriteLine("Sent PING to Master");
+
+            // var buffer = new byte[1024];
+            // int bytesRead = await masterSocket.ReceiveAsync(buffer, SocketFlags.None);
+            // var response = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            // Console.WriteLine(response);
+
+            masterSocket.Close();
+        }
+
         TcpListener server = new TcpListener(IPAddress.Any, ReadArgs.Port);
         server.Start();
 
         while (true)
         {
             var clientSocket = server.AcceptSocket();
+            // Console.WriteLine("Accepted connection from " + clientSocket.RemoteEndPoint);
             _ = HandleClient(clientSocket);
         }
     }

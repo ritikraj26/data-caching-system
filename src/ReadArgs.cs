@@ -22,7 +22,7 @@ public static class ReadArgs
             else if (args[i] == "--port" && i + 1 < args.Length)
             {
                 Port = int.Parse(args[i + 1]);
-            } 
+            }
             else if (args[i] == "--replicaof" && i + 1 < args.Length) 
             {
                 // Console.WriteLine("Setting replica role");
